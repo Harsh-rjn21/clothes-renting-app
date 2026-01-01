@@ -1,0 +1,17 @@
+# Keys
+gcp_deploy_key
+gcp_deploy_key.pub
+
+# Docker
+.docker
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Node
+node_modules/
+.next/
+dist/
+build/
