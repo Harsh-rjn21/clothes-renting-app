@@ -3,9 +3,14 @@ import requests
 import datetime
 
 # Use environment variables if provided, else default to localhost with ports (dev)
-# For production, set these to http://localhost/api/catalog etc.
-CATALOG_URL = os.getenv("CATALOG_URL", "http://localhost:8002")
-RENTAL_URL = os.getenv("RENTAL_URL", "http://localhost:8003")
+# For production, set these to http://localhost/api/catalog/ etc. (ensure trailing slash)
+CATALOG_URL = os.getenv("CATALOG_URL", "http://localhost:8002").rstrip("/")
+RENTAL_URL = os.getenv("RENTAL_URL", "http://localhost:8003").rstrip("/")
+
+def seed_products():
+    ...
+            # Ensure the specific endpoint starts with a slash
+            res = requests.post(f"{CATALOG_URL}/products", json=p)
 
 def seed_products():
     products = [
