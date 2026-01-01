@@ -1,8 +1,11 @@
+import os
 import requests
 import datetime
 
-CATALOG_URL = "http://localhost:8002"
-RENTAL_URL = "http://localhost:8003"
+# Use environment variables if provided, else default to localhost with ports (dev)
+# For production, set these to http://localhost/api/catalog etc.
+CATALOG_URL = os.getenv("CATALOG_URL", "http://localhost:8002")
+RENTAL_URL = os.getenv("RENTAL_URL", "http://localhost:8003")
 
 def seed_products():
     products = [
