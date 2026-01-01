@@ -38,7 +38,7 @@ This guide walks you through pushing your code to GitHub and deploying it to a *
     - **Machine Type**: `e2-medium` (2 vCPU, 4GB memory) is recommended for running 5 containers. `e2-micro` might run out of memory.
     - **Boot Disk**: Switch to **Ubuntu** (select **Ubuntu 22.04 LTS**). Increase size to **20 GB**.
     - **Firewall**: Check both boxes:
-        - [x] Allow HTTP traffic
+        - [x] Al    ow HTTP traffic
         - [x] Allow HTTPS traffic
     - Click **Create**.
 
@@ -100,3 +100,34 @@ This guide walks you through pushing your code to GitHub and deploying it to a *
 2.  Copy the **External IP** of your instance.
 3.  Open `http://<YOUR_EXTERNAL_IP>` in your browser.
     - You should see the landing page!
+
+## Part 5: Set up CI/CD (Automated Deployment)
+
+We have included a GitHub Action (`.github/workflows/deploy.yml`) that automatically deploys changes when you push to `main`. To make it work:
+
+1.  **Generate SSH Key Pair** (On your local machine):
+    ```bash
+    ssh-keygen -t rsa -b 4096 -f gcp_deploy_key -C "deploy@github"
+    ```
+    This creates `gcp_deploy_key` (private) and `gcp_deploy_key.pub` (public).
+
+2.  **Add Public Key to VM**:
+    - Go to your GCP VM Instances page.
+    - Click on the Instance Name -> **Edit**.
+    - Scroll down to **SSH Keys**.
+    - Click **Add Item**.
+    - Copy the contents of `gcp_deploy_key.pub` and paste it there.
+    - **Note the username** that appears on the left (e.g., `deploy`).
+    - Click **Save**.
+
+3.  **Add Secrets to GitHub**:
+    - Go to your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
+    - Click **New repository secret**. Add the following:
+        - `GCP_SSH_HOST`: Your VM's External IP.
+        - `GCP_SSH_USER`: The username from step 2 (e.g., `deploy`).
+        - `GCP_SSH_KEY`: The entire content of the **private key** file (`gcp_deploy_key`).
+
+4.  **Test It**:
+    - Make a change to your code.
+    - Commit and push to `main`.
+    - Go to the **Actions** tab in GitHub to watch the deployment succeed!
