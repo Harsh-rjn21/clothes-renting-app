@@ -1,0 +1,81 @@
+
+
+services:
+  # helper to run nextjs dev server
+  web:
+    build: 
+      context: ./apps/web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    command: npm run dev
+    depends_on:
+      - auth-service
+      - catalog-service
+
+  # Common DB for simplicity in v1 (can be split later)
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: clothes_renting
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  auth-service:
+    build: ./services/auth
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./services/auth:/app
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/clothes_renting
+    depends_on:
+      - db
+
+  catalog-service:
+    build: ./services/catalog
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./services/catalog:/app
+    ports:
+      - "8002:8000"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/clothes_renting
+    depends_on:
+      - db
+
+  rental-service:
+    build: ./services/rental
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./services/rental:/app
+    ports:
+      - "8003:8000"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/clothes_renting
+    depends_on:
+      - db
+
+  feedback-service:
+    build: ./services/feedback
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./services/feedback:/app
+    ports:
+      - "8004:8000"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/clothes_renting
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
