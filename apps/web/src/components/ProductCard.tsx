@@ -6,7 +6,7 @@ interface Product {
     name: string;
     category: string;
     image_url?: string;
-    price_3_days: float;
+    price_3_days: number;
     available: boolean;
 }
 
