@@ -131,3 +131,39 @@ We have included a GitHub Action (`.github/workflows/deploy.yml`) that automatic
     - Make a change to your code.
     - Commit and push to `main`.
     - Go to the **Actions** tab in GitHub to watch the deployment succeed!
+## Troubleshooting: Site Not Accessible?
+
+If you can't see the website on your external IP after running the containers, check the following:
+
+### 1. Check Firewall Rules
+- Go to **GCP Console** -> **Compute Engine** -> **VM Instances**.
+- Click the instance name.
+- Under **Network interfaces**, ensure "Allow HTTP traffic" is checked.
+- If it's already checked, verify the VPC firewall:
+    - Go to **VPC network** -> **Firewall**.
+    - Look for a rule named `default-allow-http`.
+    - Ensure it targets your VM (usually via `http-server` tag) and allows `0.0.0.0/0` on port 80.
+
+### 2. Verify Containers are Running
+On your VM terminal, run:
+```bash
+sudo docker ps
+```
+You should see 6 containers (`nginx`, `web`, `auth-service`, `catalog-service`, `rental-service`, `feedback-service`, `db`). If any are missing or "Restarting", check the logs:
+```bash
+sudo docker-compose -f docker-compose.prod.yml logs <service-name>
+```
+
+### 3. Test Locally on the VM
+Run this inside the SSH terminal:
+```bash
+curl localhost
+```
+If you see HTML output (the landing page), then Nginx and the web service are working correctly, and the issue is definitely the **GCP Firewall**.
+
+### 4. Correct Compose File?
+Ensure you used the `-f docker-compose.prod.yml` flag. If you just ran `docker-compose up`, the Nginx proxy won't be active on port 80.
+```bash
+# Correct way:
+sudo docker-compose -f docker-compose.prod.yml up -d --build
+```
