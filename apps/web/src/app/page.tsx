@@ -29,7 +29,7 @@ export default function Home() {
                     Explore Catalog
                   </Link>
                   <Link href="/signup" className="px-8 py-4 bg-white text-slate-900 border-2 border-slate-100 rounded-full font-black text-lg hover:bg-slate-50 hover:border-slate-200 transition-all duration-300">
-                    Start Renting
+                    Start Renting Now
                   </Link>
                 </div>
                 
