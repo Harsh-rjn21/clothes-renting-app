@@ -76,7 +76,19 @@ This guide walks you through pushing your code to GitHub and deploying it to a *
     cd clothes-renting-app
     ```
 
-4.  **Run the Application**:
+4.  **Create Environment File**:
+    Create a `.env` file with your Google OAuth credentials:
+    ```bash
+    nano .env
+    ```
+    Add the following content (replace with your actual Google Client ID):
+    ```
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
+    GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
+    ```
+    Press `Ctrl+X`, then `Y`, then `Enter` to save.
+
+5.  **Run the Application**:
     ```bash
     # Run using the production compose file
     sudo docker-compose -f docker-compose.prod.yml up -d --build

@@ -45,7 +45,7 @@ export default function Signup() {
             });
             window.google.accounts.id.renderButton(
                 document.getElementById("googleBtnSignup"),
-                { theme: "outline", size: "large", width: "100%" }
+                { theme: "outline", size: "large" }
             );
         }
     }, [router]);

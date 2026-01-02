@@ -19,8 +19,10 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile.prod
     command: npm run start
+    env_file: .env
     environment:
       - NEXT_PUBLIC_API_URL=/api
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
     depends_on:
       - auth-service
       - catalog-service
@@ -38,8 +40,10 @@ services:
   auth-service:
     build: ./services/auth
     command: uvicorn main:app --host 0.0.0.0 --port 8000
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/clothes_renting
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
     depends_on:
       - db
 

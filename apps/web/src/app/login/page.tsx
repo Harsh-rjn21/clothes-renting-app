@@ -68,7 +68,7 @@ export default function Login() {
             });
             window.google.accounts.id.renderButton(
                 document.getElementById("googleBtn"),
-                { theme: "outline", size: "large", width: "100%" }
+                { theme: "outline", size: "large" }
             );
         }
     }, [router]);
