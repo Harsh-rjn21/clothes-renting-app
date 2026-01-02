@@ -3,26 +3,28 @@
 import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import RentalCalendar from '@/components/RentalCalendar';
-import { useParams } from 'next/navigation';
-import { addDays } from 'date-fns';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { format } from 'date-fns';
+import { DateRange } from 'react-day-picker';
+
+interface ProductImage {
+    id: number;
+    url: string;
+    is_primary: boolean;
+}
 
 interface Product {
     id: number;
     name: string;
     description: string;
     category: string;
-    image_url?: string;
+    images: ProductImage[];
     price_1_day: number;
-    price_3_days: number;
-    price_7_days: number;
+    price_subsequent_day: number;
     available: boolean;
     color: string;
     size: string;
-}
-
-interface RentalAvailability {
-    product_id: number;
-    booked_dates: string[];
 }
 
 interface Review {
@@ -34,256 +36,402 @@ interface Review {
 }
 
 export default function ProductDetails() {
-    const params = useParams();
-    const id = params.id;
+    const { id } = useParams();
+    const router = useRouter();
     const [product, setProduct] = useState<Product | null>(null);
-    const [bookedDates, setBookedDates] = useState<Date[]>([]);
     const [reviews, setReviews] = useState<Review[]>([]);
+    const [bookedDates, setBookedDates] = useState<Date[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [showReviewForm, setShowReviewForm] = useState(false);
+    const [reviewRating, setReviewRating] = useState(5);
+    const [reviewComment, setReviewComment] = useState("");
+    const [submittingReview, setSubmittingReview] = useState(false);
+    const [hasReviewed, setHasReviewed] = useState(false);
+    const [availabilityError, setAvailabilityError] = useState(false);
+    const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+
     
-    // Review Form State
-    const [newRating, setNewRating] = useState(5);
-    const [newComment, setNewComment] = useState("");
-
     useEffect(() => {
-        if (!id) return;
+        const token = localStorage.getItem('token');
+        setIsLoggedIn(!!token);
+        
+        let currentUserId: number | null = null;
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                currentUserId = payload.sub || payload.user_id;
+            } catch (e) {}
+        }
 
-        const fetchData = async () => {
+        const fetchDetails = async () => {
             try {
                 // Fetch Product
-                const prodRes = await fetch(`/api/catalog/products/${id}`);
-                if (prodRes.ok) {
-                    setProduct(await prodRes.json());
+                const pRes = await fetch(`/api/catalog/products/${id}`);
+                if (pRes.ok) setProduct(await pRes.json());
+
+                // Fetch Reviews & check if user already reviewed
+                const rRes = await fetch(`/api/feedback/reviews/${id}`);
+                if (rRes.ok) {
+                    const rData: Review[] = await rRes.json();
+                    setReviews(rData);
+                    if (currentUserId) {
+                        setHasReviewed(rData.some(r => r.user_id === currentUserId));
+                    }
                 }
 
                 // Fetch Availability
-                const availRes = await fetch(`/api/rental/availability/${id}`);
-                if (availRes.ok) {
-                    const data: RentalAvailability = await availRes.json();
-                    setBookedDates(data.booked_dates.map(d => new Date(d)));
-                }
-
-                // Fetch Reviews
-                const reviewRes = await fetch(`/api/feedback/reviews/${id}`);
-                if (reviewRes.ok) {
-                    setReviews(await reviewRes.json());
+                try {
+                    const aRes = await fetch(`/api/rental/availability/${id}`);
+                    if (aRes.ok) {
+                        const availability = await aRes.json();
+                        setBookedDates(availability.booked_dates.map((d: string) => new Date(d)));
+                        setAvailabilityError(false);
+                    } else {
+                        setAvailabilityError(true);
+                    }
+                } catch (e) {
+                    console.error("Availability service unreachable", e);
+                    setAvailabilityError(true);
                 }
 
             } catch (error) {
-                console.error("Error fetching data", error);
+                console.error("Failed to fetch product details", error);
             } finally {
                 setLoading(false);
             }
         };
-
-        fetchData();
+        fetchDetails();
     }, [id]);
 
-    const handleBook = async (startDate: Date, duration: number) => {
-        if (!product) return;
+
+    const handleBook = async (range: DateRange) => {
+        if (!range.from || !range.to || !product) return;
         
-        try {
-            const endDate = addDays(startDate, duration);
-            const bookingData = {
-                product_id: product.id,
-                user_id: 1, // Dummy user ID
-                start_date: startDate.toISOString().split('T')[0],
-                end_date: endDate.toISOString().split('T')[0]
-            };
+        const token = localStorage.getItem('token');
+        if (!token) return router.push('/login');
 
-            const response = await fetch('/api/rental/bookings', {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const userId = parseInt(payload.user_id || payload.sub || "0");
+        
+        if (isNaN(userId) || userId === 0) {
+            alert("Session expired or invalid. Please log in again.");
+            return router.push('/login');
+        }
+
+        try {
+            const res = await fetch('/api/rental/bookings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bookingData)
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    product_id: product.id,
+                    user_id: userId,
+                    start_date: format(range.from, 'yyyy-MM-dd'),
+                    end_date: format(range.to, 'yyyy-MM-dd')
+                })
             });
 
-            if (response.ok) {
-                alert('Booking Confirmed!');
-                window.location.reload();
+            if (res.ok) {
+                alert("Booking Requested Successfully!");
+                router.push('/catalog');
             } else {
-                const error = await response.json();
-                alert(`Booking Failed: ${error.detail}`);
+                const err = await res.json();
+                alert(err.detail || "Booking failed");
             }
-        } catch (error) {
-            console.error("Booking error", error);
-            alert("An error occurred while booking.");
+        } catch (e) {
+            alert("Connection error");
         }
     };
 
-    const handleSubmitReview = async (e: React.FormEvent) => {
+    const handleReviewSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token || !product) return;
+
+        setSubmittingReview(true);
         try {
-            const reviewData = {
-                product_id: parseInt(id as string),
-                user_id: 1, // Dummy user
-                rating: newRating,
-                comment: newComment
-            };
-            const response = await fetch('/api/feedback/reviews', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(reviewData)
-            });
-            if (response.ok) {
-                const newReview = await response.json();
-                setReviews([...reviews, newReview]);
-                setNewComment("");
-                alert("Review submitted!");
-            } else {
-                alert("Failed to add review");
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const userId = parseInt(payload.user_id || payload.sub || "0");
+            
+            if (isNaN(userId) || userId === 0) {
+                alert("Session expired. Please log in again.");
+                return router.push('/login');
             }
-        } catch (error) {
-            console.error("Error submitting review", error);
+
+            const res = await fetch('/api/feedback/reviews', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    product_id: product.id,
+                    user_id: userId,
+                    rating: reviewRating,
+                    comment: reviewComment
+                })
+            });
+
+            if (res.ok) {
+                alert("Review submitted!");
+                setReviewComment("");
+                setShowReviewForm(false);
+                setHasReviewed(true); // Update local state immediately
+                // Refresh reviews
+                const rRes = await fetch(`/api/feedback/reviews/${id}`);
+                if (rRes.ok) setReviews(await rRes.json());
+            } else {
+                const err = await res.json();
+                alert(err.detail || "Failed to submit review");
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSubmittingReview(false);
         }
     };
 
-    if (loading) return <div>Loading...</div>;
-    if (!product) return <div>Product not found</div>;
+    const handleWhatsApp = (range: DateRange, totalPrice: number) => {
+        if (!range.from || !range.to || !product) return;
+        const start = format(range.from, 'PPP');
+        const end = format(range.to, 'PPP');
+        const message = `Hello! I'm interested in renting the "${product.name}" from ${start} to ${end}. Total estimated price: Rs. ${totalPrice}. Is it available?`;
+        window.open(`https://wa.me/916206430920?text=${encodeURIComponent(message)}`, '_blank');
+    };
+
+    if (loading) return (
+        <div className="min-h-screen bg-white flex items-center justify-center">
+            <div className="w-12 h-12 border-4 border-slate-100 border-t-indigo-600 rounded-full animate-spin"></div>
+        </div>
+    );
+
+    if (!product) return (
+        <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
+            <h1 className="text-2xl font-black text-slate-900 mb-4">Product Not Found</h1>
+            <Link href="/catalog" className="text-indigo-600 font-bold hover:underline">Back to Catalog</Link>
+        </div>
+    );
 
     return (
-        <div className="bg-white min-h-screen">
+        <div className="bg-white min-h-screen pb-20">
             <Navbar />
-            <div className="max-w-7xl mx-auto py-16 px-4 sm:py-24 sm:px-6 lg:px-8">
-                <div className="lg:grid lg:grid-cols-2 lg:gap-x-8 lg:items-start">
-                    {/* Image Gallery */}
-                    <div className="flex-col-reverse">
-                        <div className="w-full aspect-w-1 aspect-h-1">
-                            <img
-                                src={product.image_url || "https://dummyimage.com/600x400/000/fff&text=No+Image"}
-                                alt={product.name}
-                                className="w-full h-full object-center object-cover sm:rounded-lg"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Product Info */}
-                    <div className="mt-10 px-4 sm:px-0 sm:mt-16 lg:mt-0">
-                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">{product.name}</h1>
-                        <div className="mt-3">
-                            <h2 className="sr-only">Product information</h2>
-                            <p className="text-3xl text-gray-900">${product.price_3_days}<span className="text-sm text-gray-500"> / 3 days</span></p>
-                            
-                            {/* Rating Summary */}
-                            <div className="mt-2 flex items-center">
-                                <div className="flex items-center">
-                                    {[0, 1, 2, 3, 4].map((rating) => (
-                                        <svg
-                                            key={rating}
-                                            className={`h-5 w-5 flex-shrink-0 ${
-                                                (reviews.reduce((acc, r) => acc + r.rating, 0) / (reviews.length || 1)) > rating ? 'text-yellow-400' : 'text-gray-200'
-                                            }`}
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 20 20"
-                                            fill="currentColor"
-                                            aria-hidden="true"
+            
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-20">
+                <div className="lg:grid lg:grid-cols-12 lg:gap-x-16">
+                    
+                    {/* Image Section */}
+                    <div className="lg:col-span-7 mb-12 lg:mb-0">
+                        <div className="sticky top-28 space-y-4">
+                            <div className="relative rounded-3xl overflow-hidden bg-slate-50 border border-slate-100 shadow-2xl shadow-slate-100 group">
+                                <img
+                                    src={product.images?.[activeImageIndex]?.url || "https://dummyimage.com/1200x1600/f8fafc/64748b&text=Designer+Wear"}
+                                    alt={product.name}
+                                    className="w-full h-full object-center object-cover aspect-[3/4] transition-all duration-700 hover:scale-105"
+                                />
+                                {!product.available && (
+                                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center">
+                                        <span className="bg-white text-slate-900 px-8 py-4 rounded-full font-black text-xl uppercase tracking-tighter shadow-2xl">Currently Rented</span>
+                                    </div>
+                                )}
+                                
+                                {product.images.length > 1 && (
+                                    <>
+                                        <button 
+                                            onClick={() => setActiveImageIndex((prev) => (prev - 1 + product.images.length) % product.images.length)}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-md p-3 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                                         >
-                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                        </svg>
+                                            <svg className="w-6 h-6 text-slate-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M15 19l-7-7 7-7"/></svg>
+                                        </button>
+                                        <button 
+                                            onClick={() => setActiveImageIndex((prev) => (prev + 1) % product.images.length)}
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-md p-3 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <svg className="w-6 h-6 text-slate-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M9 5l7 7-7 7"/></svg>
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Thumbnails */}
+                            {product.images.length > 1 && (
+                                <div className="flex space-x-3 overflow-x-auto pb-2 no-scrollbar">
+                                    {product.images.map((img, idx) => (
+                                        <button 
+                                            key={img.id} 
+                                            onClick={() => setActiveImageIndex(idx)}
+                                            className={`relative flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${activeImageIndex === idx ? 'border-indigo-600' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                        >
+                                            <img src={img.url} className="w-full h-full object-cover" />
+                                        </button>
                                     ))}
                                 </div>
-                                <p className="ml-3 text-sm text-gray-500">{reviews.length} reviews</p>
-                             </div>
-                        </div>
-
-                        <div className="mt-6">
-                            <h3 className="sr-only">Description</h3>
-                            <div className="text-base text-gray-700 space-y-6" dangerouslySetInnerHTML={{ __html: product.description || "" }} />
-                        </div>
-                        
-                        <dl className="mt-6 grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
-                             <div className="sm:col-span-1">
-                                <dt className="text-sm font-medium text-gray-500">Color</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{product.color || "N/A"}</dd>
-                            </div>
-                            <div className="sm:col-span-1">
-                                <dt className="text-sm font-medium text-gray-500">Size</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{product.size || "N/A"}</dd>
-                            </div>
-                        </dl>
-
-                        <div className="mt-10 border-t border-gray-200 pt-10">
-                             <RentalCalendar 
-                                bookedDates={bookedDates}
-                                price1Day={product.price_1_day}
-                                price3Days={product.price_3_days}
-                                price7Days={product.price_7_days}
-                                onBook={handleBook}
-                             />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Reviews Section */}
-                <div className="mt-16 border-t border-gray-200 pt-10">
-                    <h3 className="text-2xl font-extrabold tracking-tight text-gray-900">Reviews</h3>
-                    
-                    {/* Review List */}
-                    <div className="mt-8 space-y-8">
-                        {reviews.map((review) => (
-                            <div key={review.id} className="flex space-x-4">
-                                <div className="flex-1">
-                                    <div className="flex items-center">
-                                         <div className="flex items-center">
-                                            {[0, 1, 2, 3, 4].map((rating) => (
-                                                <svg
-                                                    key={rating}
-                                                    className={`h-5 w-5 flex-shrink-0 ${
-                                                        review.rating > rating ? 'text-yellow-400' : 'text-gray-200'
-                                                    }`}
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    viewBox="0 0 20 20"
-                                                    fill="currentColor"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                                </svg>
-                                            ))}
-                                        </div>
-                                        <p className="ml-2 text-sm text-gray-500">{new Date(review.created_at).toLocaleDateString()}</p>
-                                    </div>
-                                    <p className="mt-2 text-base text-gray-700">{review.comment}</p>
+                            )}
+                            
+                            {/* Stats */}
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="bg-slate-50 p-6 rounded-2xl text-center border border-slate-100">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 leading-none">Color</p>
+                                    <p className="text-sm font-bold text-slate-900 leading-none">{product.color || 'N/A'}</p>
+                                </div>
+                                <div className="bg-slate-50 p-6 rounded-2xl text-center border border-slate-100">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 leading-none">Size</p>
+                                    <p className="text-sm font-bold text-slate-900 leading-none">{product.size || 'Universal'}</p>
+                                </div>
+                                <div className="bg-slate-50 p-6 rounded-2xl text-center border border-slate-100">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 leading-none">Condition</p>
+                                    <p className="text-sm font-bold text-slate-900 leading-none">Pristine</p>
                                 </div>
                             </div>
-                        ))}
-                        {reviews.length === 0 && <p className="text-gray-500 italic">No reviews yet. Be the first to review!</p>}
+                        </div>
                     </div>
 
-                    {/* Add Review Form */}
-                    <div className="mt-10 bg-gray-50 p-6 rounded-lg max-w-2xl">
-                        <h4 className="text-lg font-bold text-gray-900">Write a Review</h4>
-                        <form onSubmit={handleSubmitReview} className="mt-4 space-y-4">
+                    {/* Details and Rental Section */}
+                    <div className="lg:col-span-5">
+                        <div className="space-y-8">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Rating</label>
-                                <select
-                                    value={newRating}
-                                    onChange={(e) => setNewRating(parseInt(e.target.value))}
-                                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                                >
-                                    <option value="5">5 Stars</option>
-                                    <option value="4">4 Stars</option>
-                                    <option value="3">3 Stars</option>
-                                    <option value="2">2 Stars</option>
-                                    <option value="1">1 Star</option>
-                                </select>
+                                <h1 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter leading-[1.1] mb-2">{product.name}</h1>
+                                <p className="text-indigo-600 font-bold text-lg">{product.category}</p>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Comment</label>
-                                <textarea
-                                    rows={4}
-                                    value={newComment}
-                                    onChange={(e) => setNewComment(e.target.value)}
-                                    className="mt-1 block w-full shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border-gray-300 rounded-md"
-                                    placeholder="How was the item?"
-                                    required
-                                />
+
+                            <div className="bg-indigo-50/50 rounded-3xl p-8 border border-indigo-100 shadow-sm">
+                                <div className="flex items-baseline space-x-2">
+                                    <span className="text-3xl font-black text-slate-900 tracking-tighter">Rs. {product.price_1_day}</span>
+                                    <span className="text-slate-500 font-bold text-sm tracking-tight uppercase tracking-widest">/ first day</span>
+                                </div>
+                                <p className="text-indigo-600 font-bold text-sm mt-2">+ Rs. {product.price_subsequent_day} for each extra day</p>
+                                
+                                <div className="mt-8 pt-8 border-t border-indigo-100">
+                                    <RentalCalendar 
+                                        bookedDates={bookedDates}
+                                        price1Day={product.price_1_day}
+                                        priceSubsequentDay={product.price_subsequent_day}
+                                        onBook={handleBook}
+                                        onWhatsApp={handleWhatsApp}
+                                        isLoggedIn={isLoggedIn}
+                                    />
+                                    {availabilityError && (
+                                        <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                                            <p className="text-amber-700 text-xs font-bold leading-tight flex items-center">
+                                                <span className="mr-2">⚠️</span>
+                                                Real-time availability check is currently offline. You can still request a booking or enquire via WhatsApp.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <button type="submit" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                Submit Review
-                            </button>
-                        </form>
+
+                            <div className="space-y-6">
+                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 border-b border-slate-100 pb-2 leading-none">The Story</h3>
+                                <p className="text-slate-600 font-medium leading-[1.7] text-lg">
+                                    {product.description || "Every piece in our collection is handpicked for its quality and style. This garment offers a perfect blend of comfort and high-fashion aesthetics, making it ideal for your special occasion."}
+                                </p>
+                            </div>
+
+                            {/* Reviews Section */}
+                            <div className="mt-20 pt-20 border-t border-slate-100">
+                                <div className="flex items-center justify-between mb-10">
+                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">Community Reviews</h3>
+                                    <div className="flex items-center bg-yellow-50 px-4 py-2 rounded-full border border-yellow-100">
+                                        <span className="text-yellow-600 font-black mr-1 leading-none">4.8</span>
+                                        <span className="text-yellow-400 leading-none pb-0.5">★</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="space-y-8">
+                                    {reviews.length > 0 ? (
+                                        reviews.map(r => (
+                                            <div key={r.id} className="pb-8 border-b border-slate-50 last:border-0 group transition-all duration-300">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400">U{r.user_id}</div>
+                                                        <span className="text-sm font-bold text-slate-900">Verified Client</span>
+                                                    </div>
+                                                    <span className="text-yellow-400 font-bold">{"★".repeat(r.rating)}</span>
+                                                </div>
+                                                <p className="text-slate-600 font-medium italic group-hover:text-slate-900 transition-colors leading-relaxed">"{r.comment}"</p>
+                                                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-4">
+                                                    {format(new Date(r.created_at), 'MMMM d, yyyy')}
+                                                </p>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-10 bg-slate-50 rounded-3xl border border-slate-100">
+                                            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No reviews yet. Be the first!</p>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <div className="mt-12 p-10 bg-indigo-600 rounded-[32px] text-center shadow-2xl shadow-indigo-200">
+                                    <h4 className="text-lg font-black text-white mb-2 leading-none">How was your fit?</h4>
+                                    <p className="text-indigo-100 text-sm font-medium opacity-80 mb-8 leading-none">Share your StyleRent experience with the community.</p>
+                                    
+                                    {isLoggedIn ? (
+                                        hasReviewed ? (
+                                            <div className="bg-indigo-500/30 p-8 rounded-2xl border border-indigo-400">
+                                                <p className="text-white font-bold">You have already shared your experience with this item. Thank you!</p>
+                                            </div>
+                                        ) : showReviewForm ? (
+                                            <form onSubmit={handleReviewSubmit} className="max-w-md mx-auto space-y-4">
+                                                <div className="flex justify-center space-x-2">
+                                                    {[1, 2, 3, 4, 5].map((star) => (
+                                                        <button
+                                                            key={star}
+                                                            type="button"
+                                                            onClick={() => setReviewRating(star)}
+                                                            className={`text-2xl ${reviewRating >= star ? 'text-yellow-400' : 'text-indigo-300'}`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <textarea
+                                                    value={reviewComment}
+                                                    onChange={(e) => setReviewComment(e.target.value)}
+                                                    placeholder="Your thoughts..."
+                                                    className="w-full p-4 rounded-2xl bg-indigo-500 border border-indigo-400 text-white placeholder-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/50 font-medium"
+                                                    required
+                                                />
+                                                <div className="flex space-x-2">
+                                                    <button 
+                                                        type="submit" 
+                                                        disabled={submittingReview}
+                                                        className="flex-1 bg-white text-indigo-600 px-8 py-3 rounded-full font-black text-sm hover:scale-105 transition-transform disabled:opacity-50"
+                                                    >
+                                                        {submittingReview ? 'Sending...' : 'Post Review'}
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setShowReviewForm(false)}
+                                                        className="px-6 py-3 rounded-full font-bold text-sm text-white hover:bg-white/10 transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        ) : (
+                                            <button 
+                                                onClick={() => setShowReviewForm(true)}
+                                                className="bg-white text-indigo-600 px-8 py-3 rounded-full font-black text-sm hover:scale-105 transition-transform"
+                                            >
+                                                Write a Review
+                                            </button>
+                                        )
+                                    ) : (
+                                        <Link href="/login" className="inline-block bg-white text-indigo-600 px-8 py-4 rounded-full font-black text-sm hover:scale-105 transition-transform shadow-lg leading-none">Log in to Review</Link>
+                                    )}
+
+                                </div>
+
+                            </div>
+                        </div>
                     </div>
+
                 </div>
-            </div>
+            </main>
         </div>
     );
 }

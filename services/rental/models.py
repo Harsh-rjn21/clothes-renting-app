@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date, String
+from sqlalchemy import Column, Integer, Date, String, Boolean
 from database import Base
 
 class RentalBooking(Base):
@@ -10,3 +10,4 @@ class RentalBooking(Base):
     start_date = Column(Date)
     end_date = Column(Date)
     status = Column(String, default="confirmed") # confirmed, cancelled
+    is_block = Column(Boolean, default=False)

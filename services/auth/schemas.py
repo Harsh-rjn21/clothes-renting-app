@@ -6,14 +6,27 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = None
 
 class UserResponse(UserBase):
     id: int
     is_active: bool
+    is_admin: bool
+    is_verified_email: bool
+    google_id: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+class GoogleLogin(BaseModel):
+    id_token: str
+
+class VerificationSend(BaseModel):
+    email: EmailStr
+
+class VerificationConfirm(BaseModel):
+    email: EmailStr
+    code: str
 
 class Token(BaseModel):
     access_token: str

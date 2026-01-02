@@ -1,14 +1,34 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
+
+class CategoryBase(BaseModel):
+    name: str
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryResponse(CategoryBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class ProductImageBase(BaseModel):
+    url: str
+    is_primary: bool = False
+
+class ProductImageResponse(ProductImageBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
 
 class ProductBase(BaseModel):
     name: str
     description: Optional[str] = None
     category: str
-    image_url: Optional[str] = None
     price_1_day: float
-    price_3_days: float
-    price_7_days: float
+    price_subsequent_day: float
     color: Optional[str] = None
     size: Optional[str] = None
 
@@ -18,6 +38,8 @@ class ProductCreate(ProductBase):
 class ProductResponse(ProductBase):
     id: int
     available: bool
+    images: List[ProductImageResponse] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+

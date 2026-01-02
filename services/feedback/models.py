@@ -10,4 +10,6 @@ class Review(Base):
     user_id = Column(Integer, index=True)
     rating = Column(Integer)
     comment = Column(Text, nullable=True)
+    original_comment = Column(Text, nullable=True)
+    original_rating = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

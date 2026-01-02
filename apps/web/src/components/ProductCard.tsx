@@ -1,43 +1,55 @@
+"use client";
+
 import Link from 'next/link';
-import Image from 'next/image';
+
+interface ProductImage {
+    id: number;
+    url: string;
+    is_primary: boolean;
+}
 
 interface Product {
     id: number;
     name: string;
     category: string;
-    image_url?: string;
-    price_3_days: number;
+    images: ProductImage[];
+    price_1_day: number;
     available: boolean;
 }
 
 const ProductCard = ({ product }: { product: Product }) => {
     return (
-        <div className="group relative">
-            <div className="w-full min-h-80 bg-gray-200 aspect-w-1 aspect-h-1 rounded-md overflow-hidden group-hover:opacity-75 lg:h-80 lg:aspect-none">
+        <Link href={`/products/${product.id}`} className="group">
+            <div className="relative overflow-hidden rounded-2xl bg-slate-100 aspect-[3/4]">
                 <img
-                    src={product.image_url || "https://dummyimage.com/600x400/000/fff&text=No+Image"}
+                    src={product.images?.[0]?.url || "https://dummyimage.com/600x800/e2e8f0/64748b&text=Elegant+Style"}
                     alt={product.name}
-                    className="w-full h-full object-center object-cover lg:w-full lg:h-full"
+                    className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-110"
                 />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
+                    <span className="text-white text-sm font-bold bg-indigo-600 px-4 py-2 rounded-full w-full text-center shadow-lg">
+                        View Details
+                    </span>
+                </div>
+                {!product.available && (
+                    <div className="absolute top-4 right-4 bg-red-500/90 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-sm">
+                        Unavailable
+                    </div>
+                )}
             </div>
-            <div className="mt-4 flex justify-between">
-                <div>
-                    <h3 className="text-sm text-gray-700">
-                        <Link href={`/products/${product.id}`}>
-                            <span aria-hidden="true" className="absolute inset-0" />
-                            {product.name}
-                        </Link>
+            <div className="mt-4 space-y-1 px-1">
+                <div className="flex justify-between items-start">
+                    <h3 className="text-base font-bold text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">
+                        {product.name}
                     </h3>
-                    <p className="mt-1 text-sm text-gray-500">{product.category}</p>
                 </div>
-                <p className="text-sm font-medium text-gray-900">${product.price_3_days}/3days</p>
+                <p className="text-sm font-medium text-slate-500">{product.category}</p>
+                <div className="pt-1 flex items-baseline space-x-1">
+                    <span className="text-sm font-bold text-slate-900">Rs. {product.price_1_day}</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">/ day</span>
+                </div>
             </div>
-            {!product.available && (
-                <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded">
-                    Rented
-                </div>
-            )}
-        </div>
+        </Link>
     );
 };
 

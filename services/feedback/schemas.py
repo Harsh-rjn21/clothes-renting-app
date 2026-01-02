@@ -11,9 +11,15 @@ class ReviewBase(BaseModel):
 class ReviewCreate(ReviewBase):
     pass
 
+class ReviewUpdate(BaseModel):
+    comment: Optional[str] = None
+    rating: Optional[int] = None
+
 class ReviewResponse(ReviewBase):
     id: int
+    original_comment: Optional[str] = None
+    original_rating: Optional[int] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
