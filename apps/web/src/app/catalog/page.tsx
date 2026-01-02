@@ -8,7 +8,7 @@ interface Product {
     id: number;
     name: string;
     category: string;
-    images: { url: string }[];
+    images: { id: number; url: string; is_primary: boolean }[];
     price_1_day: number;
     available: boolean;
 }

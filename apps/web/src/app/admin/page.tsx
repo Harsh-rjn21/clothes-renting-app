@@ -60,7 +60,6 @@ export default function AdminDashboard() {
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [category, setCategory] = useState("Party Wear");
-    const [imageUrl, setImageUrl] = useState("");
     const [price1, setPrice1] = useState(0);
     const [priceSub, setPriceSub] = useState(0);
     const [color, setColor] = useState("");
@@ -173,7 +172,6 @@ export default function AdminDashboard() {
         setName(p.name);
         setDescription(p.description);
         setCategory(p.category);
-        setImageUrl(p.image_url || "");
         setPrice1(p.price_1_day);
         setPriceSub(p.price_subsequent_day);
         setColor(p.color);
