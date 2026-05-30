@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 };
 
 import VerificationGuard from '@/components/VerificationGuard';
+import { CartProvider } from '@/components/CartContext';
 
 export default function RootLayout({
   children,
@@ -29,7 +30,9 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <VerificationGuard>
-          {children}
+          <CartProvider>
+            {children}
+          </CartProvider>
         </VerificationGuard>
       </body>
     </html>

@@ -7,14 +7,14 @@ import 'react-day-picker/dist/style.css';
 
 interface RentalCalendarProps {
     bookedDates: Date[];
-    price1Day: number;
+    price3Day: number;
     priceSubsequentDay: number;
-    onBook: (range: DateRange) => void;
+    onAddToCart: (range: DateRange) => void;
     onWhatsApp: (range: DateRange, totalPrice: number) => void;
     isLoggedIn: boolean;
 }
 
-const RentalCalendar = ({ bookedDates, price1Day, priceSubsequentDay, onBook, onWhatsApp, isLoggedIn }: RentalCalendarProps) => {
+const RentalCalendar = ({ bookedDates, price3Day, priceSubsequentDay, onAddToCart, onWhatsApp, isLoggedIn }: RentalCalendarProps) => {
     const [range, setRange] = useState<DateRange | undefined>(undefined);
 
     const isDateDisabled = (date: Date) => {
@@ -29,20 +29,24 @@ const RentalCalendar = ({ bookedDates, price1Day, priceSubsequentDay, onBook, on
         if (!range?.from || !range?.to) return 0;
         const days = differenceInDays(range.to, range.from) + 1;
         if (days <= 0) return 0;
-        return price1Day + (days - 1) * priceSubsequentDay;
+        
+        // Base covers 3 days. Any extra days are charged subsequent rate
+        const addOnDays = Math.max(0, days - 3);
+        return price3Day + (addOnDays * priceSubsequentDay);
     };
 
     const totalPrice = calculatePrice();
+    const daysSelected = range?.from && range?.to ? differenceInDays(range.to, range.from) + 1 : 0;
 
     return (
         <div className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm">
             <div className="p-2 sm:p-4 flex justify-center">
                 <style>{`
-                    .rdp { --rdp-accent-color: #4f46e5; --rdp-background-color: #f5f3ff; margin: 0; }
+                    .rdp { --rdp-accent-color: var(--theme-primary-600, #4f46e5); --rdp-background-color: var(--theme-primary-50, #f5f3ff); margin: 0; }
                     .rdp-day_selected { background-color: var(--rdp-accent-color) !important; color: white !important; font-weight: 800; }
-                    .rdp-day_selected:hover { background-color: #4338ca !important; }
-                    .rdp-day_today { color: #4f46e5; font-weight: 800; border-bottom: 2px solid #4f46e5; border-radius: 0; }
-                    .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background-color: #f8fafc; color: #4f46e5; }
+                    .rdp-day_selected:hover { background-color: var(--theme-primary-700, #4338ca) !important; }
+                    .rdp-day_today { color: var(--theme-primary-600, #4f46e5); font-weight: 800; border-bottom: 2px solid var(--theme-primary-600, #4f46e5); border-radius: 0; }
+                    .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background-color: #f8fafc; color: var(--theme-primary-600, #4f46e5); }
                 `}</style>
                 <DayPicker
                     mode="range"
@@ -57,18 +61,24 @@ const RentalCalendar = ({ bookedDates, price1Day, priceSubsequentDay, onBook, on
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 leading-none">Estimate</p>
-                        <p className="text-3xl font-black text-slate-900 tracking-tighter leading-none">Rs. {totalPrice}</p>
+                        <p className="text-3xl font-black text-slate-900 tracking-tighter leading-none">${totalPrice.toFixed(2)}</p>
+                        {daysSelected > 0 && (
+                            <p className="text-xs text-slate-500 font-bold mt-1">({daysSelected} days selected)</p>
+                        )}
                     </div>
                 </div>
 
                 {!isLoggedIn ? (
-                    <Link href="/login" className="w-full block text-center py-4 px-6 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-xl shadow-slate-100">
+                    <button
+                        onClick={() => window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`}
+                        className="w-full text-center py-4 px-6 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-xl shadow-slate-100"
+                    >
                         Sign in to Book
-                    </Link>
+                    </button>
                 ) : (
                     <div className="grid grid-cols-1 gap-3">
                         <button
-                            onClick={() => range && onBook(range)}
+                            onClick={() => range && onAddToCart(range)}
                             disabled={!range?.from || !range?.to}
                             className={`w-full py-4 px-6 rounded-2xl font-black text-sm transition-all shadow-xl ${
                                 range?.from && range?.to
@@ -76,7 +86,7 @@ const RentalCalendar = ({ bookedDates, price1Day, priceSubsequentDay, onBook, on
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                             }`}
                         >
-                            {range?.from && range?.to ? 'Secure Booking' : 'Select Dates First'}
+                            {range?.from && range?.to ? 'Add to Cart' : 'Select Dates First'}
                         </button>
 
                         <button
@@ -101,8 +111,5 @@ const RentalCalendar = ({ bookedDates, price1Day, priceSubsequentDay, onBook, on
         </div>
     );
 };
-
-// Re-import Link in case it's used
-import Link from 'next/link';
 
 export default RentalCalendar;

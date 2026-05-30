@@ -16,14 +16,25 @@ class Product(Base):
     description = Column(Text, nullable=True)
     category = Column(String, index=True)
     
-    price_1_day = Column(Float)
-    price_subsequent_day = Column(Float)
+    type = Column(String, default="rent") # "rent" or "buy"
+    price_buy = Column(Float, nullable=True)
+    price_buy_sale = Column(Float, nullable=True)
+    price_rent_3day = Column(Float, nullable=True)
+    price_rent_3day_sale = Column(Float, nullable=True)
+    price_rent_subsequent = Column(Float, nullable=True)
     
     available = Column(Boolean, default=True)
     color = Column(String, nullable=True)
     size = Column(String, nullable=True)
 
     images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
+
+class GlobalDiscount(Base):
+    __tablename__ = "global_discounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    percentage = Column(Float, default=0.0) # e.g. 10.0 for 10%
+    is_active = Column(Boolean, default=False)
 
 class ProductImage(Base):
     __tablename__ = "product_images"

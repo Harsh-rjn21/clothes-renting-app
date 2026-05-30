@@ -151,6 +151,29 @@ def delete_product(product_id: int, db: Session = Depends(database.get_db)):
     db.commit()
     return None
 
+@app.get("/global-discount", response_model=schemas.GlobalDiscountResponse)
+def get_global_discount(db: Session = Depends(database.get_db)):
+    discount = db.query(models.GlobalDiscount).first()
+    if not discount:
+        discount = models.GlobalDiscount(percentage=0.0, is_active=False)
+        db.add(discount)
+        db.commit()
+        db.refresh(discount)
+    return discount
+
+@app.post("/global-discount", response_model=schemas.GlobalDiscountResponse)
+def update_global_discount(discount_in: schemas.GlobalDiscountCreate, db: Session = Depends(database.get_db)):
+    discount = db.query(models.GlobalDiscount).first()
+    if not discount:
+        discount = models.GlobalDiscount(**discount_in.dict())
+        db.add(discount)
+    else:
+        discount.percentage = discount_in.percentage
+        discount.is_active = discount_in.is_active
+    db.commit()
+    db.refresh(discount)
+    return discount
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}

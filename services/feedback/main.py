@@ -1,9 +1,28 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
 
 import models, schemas, database
+
+security = HTTPBearer()
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretkey")
+ALGORITHM = "HS256"
+
+def get_user_claims(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("user_id")
+        is_admin: bool = payload.get("is_admin", False)
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token claims")
+        return {"user_id": user_id, "is_admin": is_admin}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -18,7 +37,14 @@ app.add_middleware(
 )
 
 @app.post("/reviews", response_model=schemas.ReviewResponse, status_code=status.HTTP_201_CREATED)
-def create_review(review: schemas.ReviewCreate, db: Session = Depends(database.get_db)):
+def create_review(
+    review: schemas.ReviewCreate, 
+    db: Session = Depends(database.get_db),
+    claims: dict = Depends(get_user_claims)
+):
+    if claims["user_id"] != review.user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to post review as another user")
+        
     if review.rating < 1 or review.rating > 5:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
     
@@ -41,10 +67,18 @@ def create_review(review: schemas.ReviewCreate, db: Session = Depends(database.g
     return new_review
 
 @app.patch("/reviews/{review_id}", response_model=schemas.ReviewResponse)
-def update_review(review_id: int, review_update: schemas.ReviewUpdate, db: Session = Depends(database.get_db)):
+def update_review(
+    review_id: int, 
+    review_update: schemas.ReviewUpdate, 
+    db: Session = Depends(database.get_db),
+    claims: dict = Depends(get_user_claims)
+):
     db_review = db.query(models.Review).filter(models.Review.id == review_id).first()
     if not db_review:
         raise HTTPException(status_code=404, detail="Review not found")
+        
+    if not claims["is_admin"] and db_review.user_id != claims["user_id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this review")
     
     if review_update.comment is not None:
         db_review.comment = review_update.comment
@@ -58,7 +92,14 @@ def update_review(review_id: int, review_update: schemas.ReviewUpdate, db: Sessi
     return db_review
 
 @app.post("/reviews/{review_id}/revert", response_model=schemas.ReviewResponse)
-def revert_review(review_id: int, db: Session = Depends(database.get_db)):
+def revert_review(
+    review_id: int, 
+    db: Session = Depends(database.get_db),
+    claims: dict = Depends(get_user_claims)
+):
+    if not claims["is_admin"]:
+        raise HTTPException(status_code=403, detail="Only admins can revert reviews")
+        
     db_review = db.query(models.Review).filter(models.Review.id == review_id).first()
     if not db_review:
         raise HTTPException(status_code=404, detail="Review not found")
@@ -70,10 +111,17 @@ def revert_review(review_id: int, db: Session = Depends(database.get_db)):
     return db_review
 
 @app.delete("/reviews/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_review(review_id: int, db: Session = Depends(database.get_db)):
+def delete_review(
+    review_id: int, 
+    db: Session = Depends(database.get_db),
+    claims: dict = Depends(get_user_claims)
+):
     db_review = db.query(models.Review).filter(models.Review.id == review_id).first()
     if not db_review:
         raise HTTPException(status_code=404, detail="Review not found")
+        
+    if not claims["is_admin"] and db_review.user_id != claims["user_id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this review")
     
     db.delete(db_review)
     db.commit()

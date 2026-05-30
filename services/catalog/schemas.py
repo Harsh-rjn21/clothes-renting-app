@@ -27,8 +27,12 @@ class ProductBase(BaseModel):
     name: str
     description: Optional[str] = None
     category: str
-    price_1_day: float
-    price_subsequent_day: float
+    type: str = "rent" # "rent" or "buy"
+    price_buy: Optional[float] = None
+    price_buy_sale: Optional[float] = None
+    price_rent_3day: Optional[float] = None
+    price_rent_3day_sale: Optional[float] = None
+    price_rent_subsequent: Optional[float] = None
     color: Optional[str] = None
     size: Optional[str] = None
 
@@ -39,6 +43,19 @@ class ProductResponse(ProductBase):
     id: int
     available: bool
     images: List[ProductImageResponse] = []
+
+    class Config:
+        from_attributes = True
+
+class GlobalDiscountBase(BaseModel):
+    percentage: float
+    is_active: bool
+
+class GlobalDiscountCreate(GlobalDiscountBase):
+    pass
+
+class GlobalDiscountResponse(GlobalDiscountBase):
+    id: int
 
     class Config:
         from_attributes = True

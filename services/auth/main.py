@@ -1,4 +1,17 @@
 import os
+
+# Load root .env file variables dynamically
+def load_env():
+    root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+    if os.path.exists(root_env):
+        with open(root_env) as f:
+            for line in f:
+                if line.strip() and not line.strip().startswith('#') and '=' in line:
+                    key, val = line.strip().split('=', 1)
+                    os.environ[key.strip()] = val.strip()
+
+load_env()
+
 from fastapi import FastAPI, Depends, HTTPException, status
 from typing import List
 from sqlalchemy.orm import Session
@@ -43,44 +56,100 @@ conf = ConnectionConfig(
 
 @app.post("/signup", response_model=schemas.UserResponse)
 def signup(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    if len(user.password.encode('utf-8')) > 72:
-        raise HTTPException(status_code=400, detail="Password too long (max 72 bytes)")
+    if not user.email and not user.phone_number:
+        raise HTTPException(status_code=400, detail="Must provide email or phone number")
+        
+    if user.email:
+        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+            
+    if user.phone_number:
+        db_user = db.query(models.User).filter(models.User.phone_number == user.phone_number).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Phone number already registered")
 
-    is_admin = user.email in ADMIN_EMAILS
-    hashed_password = utils.get_password_hash(user.password)
+    is_admin = user.email in ADMIN_EMAILS if user.email else False
+    hashed_password = utils.get_password_hash(user.password) if user.password else None
     new_user = models.User(
         email=user.email, 
+        phone_number=user.phone_number,
+        instagram_id=user.instagram_id,
         hashed_password=hashed_password, 
         full_name=user.full_name,
-        is_admin=is_admin
+        is_admin=is_admin,
+        is_verified_phone=True
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     
     # Trigger Verification Code
-    send_verification_logic(new_user.email)
+    if new_user.email:
+        send_verification_logic(email=new_user.email)
+    elif new_user.phone_number:
+        send_verification_logic(phone_number=new_user.phone_number)
     
     return new_user
 
-def send_verification_logic(email: str):
+def send_smtp_email(to_email: str, code: str):
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    try:
+        sender_email = "connect.local.1221@gmail.com"
+        sender_password = "hfyx ujzx dsgq jcqw"
+        
+        msg = MIMEMultipart()
+        msg['From'] = f"StyleRent <{sender_email}>"
+        msg['To'] = to_email
+        msg['Subject'] = "StyleRent Verification Code"
+        
+        body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                <h2 style="color: #4f46e5;">Welcome to StyleRent!</h2>
+                <p>Thank you for signing up. Please use the following 6-digit verification code to unlock your account:</p>
+                <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 5px; text-align: center; color: #4f46e5; margin: 20px 0;">
+                    {code}
+                </div>
+                <p>This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+                <p style="font-size: 11px; color: #9ca3af;">StyleRent Rewards © 2026. All rights reserved.</p>
+            </body>
+        </html>
+        """
+        msg.attach(MIMEText(body, 'html'))
+        
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, msg.as_string())
+        print(f"EMAIL SENT successfully to {to_email}")
+    except Exception as e:
+        print(f"FAILED TO SEND EMAIL to {to_email}: {e}")
+
+def send_verification_logic(email: str = None, phone_number: str = None):
+    import threading
+    key = email if email else phone_number
+    if not key:
+        return
     code = f"{random.randint(100000, 999999)}"
-    verification_codes[email] = {"code": code, "expires": datetime.utcnow() + timedelta(minutes=10)}
+    verification_codes[key] = {"code": code, "expires": datetime.utcnow() + timedelta(minutes=10)}
     
-    # MOCK: Still print to terminal in case SMTP fails or is not configured
-    print(f"VERIFICATION CODE FOR {email}: {code}")
+    # Still print to terminal for easy local checking
+    print(f"VERIFICATION CODE FOR {key}: {code}")
     
-    # Optional: Actual email sending background task could be here
-    # but for simplicity in this flow, we print it. 
-    # If MAIL_USERNAME is configured, we could attempt to send.
+    if email:
+        thread = threading.Thread(target=send_smtp_email, args=(email, code))
+        thread.start()
 
 @app.post("/login", response_model=schemas.Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    user = db.query(models.User).filter(
+        (models.User.email == form_data.username) | 
+        (models.User.phone_number == form_data.username)
+    ).first()
     if not user or not utils.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -89,7 +158,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         )
     
     # Sync admin status during login
-    is_admin = user.email in ADMIN_EMAILS
+    is_admin = user.email in ADMIN_EMAILS if user.email else False
     if is_admin != user.is_admin:
         user.is_admin = is_admin
         db.commit()
@@ -98,10 +167,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token_expires = timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = utils.create_access_token(
         data={
-            "sub": user.email, 
+            "sub": user.email if user.email else user.phone_number, 
             "user_id": user.id, 
             "is_admin": user.is_admin,
-            "is_verified_email": user.is_verified_email
+            "is_verified_email": user.is_verified_email,
+            "is_verified_phone": user.is_verified_phone
         }, 
         expires_delta=access_token_expires
     )
@@ -120,7 +190,7 @@ def google_login(data: schemas.GoogleLogin, db: Session = Depends(database.get_d
             # Fallback for dev if not set, but practically we need it
             raise HTTPException(status_code=500, detail="Google Client ID not configured")
             
-        idinfo = id_token.verify_oauth2_token(data.id_token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        idinfo = id_token.verify_oauth2_token(data.id_token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=15)
         
         email = idinfo['email']
         google_id = idinfo['sub']
@@ -153,32 +223,139 @@ def google_login(data: schemas.GoogleLogin, db: Session = Depends(database.get_d
                 "sub": user.email, 
                 "user_id": user.id, 
                 "is_admin": user.is_admin,
-                "is_verified_email": user.is_verified_email
+                "is_verified_email": user.is_verified_email,
+                "is_verified_phone": user.is_verified_phone
             }, 
             expires_delta=access_token_expires
         )
         return {"access_token": access_token, "token_type": "bearer"}
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid Google token")
+    except ValueError as e:
+        print(f"GOOGLE AUTH ERROR: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid Google token: {str(e)}")
+
+@app.post("/facebook-login", response_model=schemas.Token)
+def facebook_login(data: schemas.FacebookLogin, db: Session = Depends(database.get_db)):
+    import requests
+    try:
+        # Verify the access token by fetching the user profile from Facebook
+        graph_url = "https://graph.facebook.com/v18.0/me"
+        params = {
+            "fields": "id,name,email",
+            "access_token": data.access_token
+        }
+        res = requests.get(graph_url, params=params, timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=400, detail="Invalid Facebook access token")
+            
+        fb_data = res.json()
+        facebook_id = fb_data.get("id")
+        full_name = fb_data.get("name")
+        email = fb_data.get("email")
+        
+        if not facebook_id:
+            raise HTTPException(status_code=400, detail="Unable to retrieve Facebook ID")
+            
+        user = db.query(models.User).filter(models.User.facebook_id == facebook_id).first()
+        if not user:
+            if email:
+                user = db.query(models.User).filter(models.User.email == email).first()
+                if user:
+                    user.facebook_id = facebook_id
+                    user.is_verified_email = True
+                    db.commit()
+                    db.refresh(user)
+            
+            if not user:
+                is_admin = email in ADMIN_EMAILS if email else False
+                user = models.User(
+                    email=email,
+                    facebook_id=facebook_id,
+                    full_name=full_name,
+                    is_admin=is_admin,
+                    is_verified_email=True,
+                    is_verified_phone=True
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                
+        access_token_expires = timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = utils.create_access_token(
+            data={
+                "sub": user.email if user.email else f"facebook_{user.facebook_id}", 
+                "user_id": user.id, 
+                "is_admin": user.is_admin,
+                "is_verified_email": user.is_verified_email,
+                "is_verified_phone": user.is_verified_phone
+            }, 
+            expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    except Exception as e:
+        print(f"FACEBOOK AUTH ERROR: {e}")
+        raise HTTPException(status_code=400, detail=f"Facebook login failed: {str(e)}")
+
+@app.post("/instagram-login", response_model=schemas.Token)
+def instagram_login(data: schemas.InstagramLogin, db: Session = Depends(database.get_db)):
+    user = db.query(models.User).filter(models.User.instagram_id == data.instagram_id).first()
+    if not user:
+        # Create a new user with Instagram auth
+        user = models.User(
+            instagram_id=data.instagram_id,
+            full_name=data.full_name,
+            is_active=True,
+            is_admin=False,
+            is_verified_email=True, # Social logins are pre-verified
+            is_verified_phone=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+    access_token_expires = timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = utils.create_access_token(
+        data={
+            "sub": f"instagram_{user.instagram_id}", 
+            "user_id": user.id, 
+            "is_admin": user.is_admin,
+            "is_verified_email": user.is_verified_email,
+            "is_verified_phone": user.is_verified_phone
+        }, 
+        expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/verify/send")
 def send_verification(data: schemas.VerificationSend):
-    send_verification_logic(data.email)
-    return {"message": "Verification code sent to email"}
+    if not data.email and not data.phone_number:
+        raise HTTPException(status_code=400, detail="Must provide email or phone number")
+    send_verification_logic(email=data.email, phone_number=data.phone_number)
+    target = data.email if data.email else data.phone_number
+    return {"message": f"Verification code sent to {target}"}
 
 @app.post("/verify/confirm")
 def confirm_verification(data: schemas.VerificationConfirm, db: Session = Depends(database.get_db)):
-    entry = verification_codes.get(data.email)
+    target = data.email if data.email else data.phone_number
+    if not target:
+        raise HTTPException(status_code=400, detail="Must provide email or phone number")
+        
+    entry = verification_codes.get(target)
     if not entry or entry["code"] != data.code or entry["expires"] < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Invalid or expired code")
     
-    user = db.query(models.User).filter(models.User.email == data.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    if data.email:
+        user = db.query(models.User).filter(models.User.email == data.email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user.is_verified_email = True
+    else:
+        user = db.query(models.User).filter(models.User.phone_number == data.phone_number).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user.is_verified_phone = True
         
-    user.is_verified_email = True
     db.commit()
-    del verification_codes[data.email]
+    del verification_codes[target]
     return {"message": "Verification successful"}
 
 @app.get("/users", response_model=List[schemas.UserResponse])

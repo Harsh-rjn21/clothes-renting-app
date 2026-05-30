@@ -21,12 +21,16 @@ interface Product {
     description: string;
     category: string;
     images: ProductImage[];
-    price_1_day: number;
-    price_subsequent_day: number;
+    type: 'rent' | 'buy';
+    price_buy?: number;
+    price_buy_sale?: number;
+    price_rent_3day?: number;
+    price_rent_3day_sale?: number;
+    price_rent_subsequent?: number;
+    available: boolean;
     color: string;
     size: string;
 }
-
 
 interface User {
     id: number;
@@ -47,23 +51,27 @@ interface Review {
 }
 
 export default function AdminDashboard() {
-    const [activeTab, setActiveTab] = useState<'products' | 'users' | 'reviews' | 'blocks' | 'categories'>('products');
+    const [activeTab, setActiveTab] = useState<'products' | 'users' | 'reviews' | 'blocks' | 'categories' | 'discounts'>('products');
     const [products, setProducts] = useState<Product[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [reviews, setReviews] = useState<Review[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [isAdmin, setIsAdmin] = useState(false);
 
-
-    // Form States
+    // Product Form States
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [category, setCategory] = useState("Party Wear");
-    const [price1, setPrice1] = useState(0);
-    const [priceSub, setPriceSub] = useState(0);
+    const [productType, setProductType] = useState<'rent' | 'buy'>('rent');
+    const [priceBuy, setPriceBuy] = useState(0);
+    const [priceBuySale, setPriceBuySale] = useState(0);
+    const [priceRent3Day, setPriceRent3Day] = useState(0);
+    const [priceRent3DaySale, setPriceRent3DaySale] = useState(0);
+    const [priceRentSubsequent, setPriceRentSubsequent] = useState(0);
     const [color, setColor] = useState("");
     const [size, setSize] = useState("");
+    const [isAvailable, setIsAvailable] = useState(true);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
 
@@ -75,6 +83,9 @@ export default function AdminDashboard() {
     const [blockStart, setBlockStart] = useState("");
     const [blockEnd, setBlockEnd] = useState("");
 
+    // Global Discount State
+    const [globalDiscountPercentage, setGlobalDiscountPercentage] = useState(0);
+    const [globalDiscountActive, setGlobalDiscountActive] = useState(false);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -97,38 +108,71 @@ export default function AdminDashboard() {
 
     const fetchData = async () => {
         try {
-            const [pRes, uRes, rRes, cRes] = await Promise.all([
-                fetch('/api/catalog/products'),
-                fetch('/api/auth/users'),
-                fetch('/api/feedback/reviews'),
-                fetch('/api/catalog/categories')
+            const token = localStorage.getItem('token');
+            const headers = { 'Authorization': `Bearer ${token}` };
+
+            const [pRes, uRes, rRes, cRes, dRes] = await Promise.all([
+                fetch('/api/catalog/products', { headers }),
+                fetch('/api/auth/users', { headers }),
+                fetch('/api/feedback/reviews', { headers }),
+                fetch('/api/catalog/categories', { headers }),
+                fetch('/api/catalog/global-discount', { headers })
             ]);
-            if (pRes.ok) setProducts(await pRes.json());
+            
+            if (pRes.ok) setProducts(await pRes.ok ? await pRes.json() : []);
             if (uRes.ok) setUsers(await uRes.json());
             if (rRes.ok) setReviews(await rRes.json());
-            if (cRes.ok) setCategories(await cRes.json());
+            if (cRes.ok) {
+                const cats = await cRes.json();
+                setCategories(cats);
+                if (cats.length > 0 && !category) {
+                    setCategory(cats[0].name);
+                }
+            }
+            if (dRes.ok) {
+                const discount = await dRes.json();
+                setGlobalDiscountPercentage(discount.percentage);
+                setGlobalDiscountActive(discount.is_active);
+            }
         } catch (error) {
             console.error("Error fetching admin data", error);
         }
     };
 
-
     const resetProductForm = () => {
         setEditingProduct(null);
         setName("");
         setDescription("");
-        setCategory("Party Wear");
-        setPrice1(0);
-        setSelectedFiles([]);
-        setPrice1(0);
-        setPriceSub(0);
+        setCategory(categories[0]?.name || "Party Wear");
+        setProductType('rent');
+        setPriceBuy(0);
+        setPriceBuySale(0);
+        setPriceRent3Day(0);
+        setPriceRent3DaySale(0);
+        setPriceRentSubsequent(0);
         setColor("");
         setSize("");
+        setIsAvailable(true);
+        setSelectedFiles([]);
     };
 
     const handleSaveProduct = async (e: React.FormEvent) => {
         e.preventDefault();
-        const data = { name, description, category, price_1_day: price1, price_subsequent_day: priceSub, color, size };
+        const token = localStorage.getItem('token');
+        const data = { 
+            name, 
+            description, 
+            category, 
+            type: productType,
+            price_buy: productType === 'buy' ? priceBuy : null,
+            price_buy_sale: productType === 'buy' && priceBuySale ? priceBuySale : null,
+            price_rent_3day: productType === 'rent' ? priceRent3Day : null,
+            price_rent_3day_sale: productType === 'rent' && priceRent3DaySale ? priceRent3DaySale : null,
+            price_rent_subsequent: productType === 'rent' ? priceRentSubsequent : null,
+            color, 
+            size,
+            available: isAvailable
+        };
         
         const url = editingProduct ? `/api/catalog/products/${editingProduct.id}` : '/api/catalog/products';
         const method = editingProduct ? 'PATCH' : 'POST';
@@ -136,7 +180,10 @@ export default function AdminDashboard() {
         try {
             const res = await fetch(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(data)
             });
 
@@ -151,6 +198,7 @@ export default function AdminDashboard() {
                         formData.append('file', file);
                         await fetch(`/api/catalog/products/${savedProduct.id}/images/upload`, {
                             method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}` },
                             body: formData
                         });
                     }
@@ -160,6 +208,9 @@ export default function AdminDashboard() {
                 alert(editingProduct ? "Product Updated!" : "Product Added!");
                 resetProductForm();
                 fetchData();
+            } else {
+                const err = await res.json();
+                alert(err.detail || "Failed to save product");
             }
         } catch (err) {
             console.error(err);
@@ -172,24 +223,37 @@ export default function AdminDashboard() {
         setName(p.name);
         setDescription(p.description);
         setCategory(p.category);
-        setPrice1(p.price_1_day);
-        setPriceSub(p.price_subsequent_day);
+        setProductType(p.type);
+        setPriceBuy(p.price_buy || 0);
+        setPriceBuySale(p.price_buy_sale || 0);
+        setPriceRent3Day(p.price_rent_3day || 0);
+        setPriceRent3DaySale(p.price_rent_3day_sale || 0);
+        setPriceRentSubsequent(p.price_rent_subsequent || 0);
         setColor(p.color);
         setSize(p.size);
+        setIsAvailable(p.available);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDeleteProduct = async (id: number) => {
         if (!confirm("Are you sure you want to delete this product?")) return;
-        const res = await fetch(`/api/catalog/products/${id}`, { method: 'DELETE' });
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/catalog/products/${id}`, { 
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (res.ok) fetchData();
     };
 
     const handleBlockDates = async (e: React.FormEvent) => {
         e.preventDefault();
+        const token = localStorage.getItem('token');
         const res = await fetch('/api/rental/blocks', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({
                 product_id: parseInt(blockProductId),
                 start_date: blockStart,
@@ -200,17 +264,28 @@ export default function AdminDashboard() {
             alert("Dates Blocked!");
             setBlockStart("");
             setBlockEnd("");
+        } else {
+            const err = await res.json();
+            alert(err.detail || "Failed to block dates");
         }
     };
 
     const handleRevertReview = async (id: number) => {
-        const res = await fetch(`/api/feedback/reviews/${id}/revert`, { method: 'POST' });
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/feedback/reviews/${id}/revert`, { 
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (res.ok) fetchData();
     };
 
     const handleDeleteReview = async (id: number) => {
         if (!confirm("Delete this review?")) return;
-        const res = await fetch(`/api/feedback/reviews/${id}`, { method: 'DELETE' });
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/feedback/reviews/${id}`, { 
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (res.ok) fetchData();
     };
 
@@ -222,9 +297,13 @@ export default function AdminDashboard() {
         if (newRatingStr === null) return;
         const newRating = parseInt(newRatingStr);
 
+        const token = localStorage.getItem('token');
         const res = await fetch(`/api/feedback/reviews/${r.id}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ comment: newComment, rating: newRating })
         });
         if (res.ok) fetchData();
@@ -232,9 +311,13 @@ export default function AdminDashboard() {
 
     const handleAddCategory = async (e: React.FormEvent) => {
         e.preventDefault();
+        const token = localStorage.getItem('token');
         const res = await fetch('/api/catalog/categories', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ name: newCategoryName })
         });
         if (res.ok) {
@@ -248,7 +331,11 @@ export default function AdminDashboard() {
 
     const handleDeleteCategory = async (id: number) => {
         if (!confirm("Delete this category?")) return;
-        const res = await fetch(`/api/catalog/categories/${id}`, { method: 'DELETE' });
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/catalog/categories/${id}`, { 
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (res.ok) {
             fetchData();
         } else {
@@ -257,6 +344,27 @@ export default function AdminDashboard() {
         }
     };
 
+    const handleSaveGlobalDiscount = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/catalog/global-discount', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                percentage: globalDiscountPercentage,
+                is_active: globalDiscountActive
+            })
+        });
+        if (res.ok) {
+            alert("Global store discount updated successfully!");
+            fetchData();
+        } else {
+            alert("Failed to update global discount.");
+        }
+    };
 
     if (!isAdmin) return null;
 
@@ -282,62 +390,133 @@ export default function AdminDashboard() {
             <div className="max-w-7xl mx-auto px-4">
                 
                 {/* Responsive Tabs */}
-                <div className="bg-white p-1 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-wrap sm:flex-nowrap">
-                    {(['products', 'users', 'reviews', 'blocks', 'categories'] as const).map(tab => (
+                <div className="bg-white p-1 rounded-2xl shadow-sm border border-slate-200 mb-8 flex flex-wrap">
+                    {([
+                        { id: 'products', name: 'Products' },
+                        { id: 'categories', name: 'Categories' },
+                        { id: 'discounts', name: 'Discounts' },
+                        { id: 'reviews', name: 'Reviews' },
+                        { id: 'blocks', name: 'Date Blocks' },
+                        { id: 'users', name: 'Users' }
+                    ] as const).map(tab => (
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`flex-1 py-3 px-4 rounded-xl text-sm font-black capitalize transition-all duration-300 ${activeTab === tab ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-500 hover:text-slate-900'}`}
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            {tab}
+                            {tab.name}
                         </button>
                     ))}
                 </div>
-
 
                 {activeTab === 'products' && (
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                         {/* Form */}
                         <div className="lg:col-span-5">
-                            <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-xl shadow-slate-200/50 border border-slate-100">
-                                <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight">{editingProduct ? 'Update Garment' : 'New Collection Item'}</h2>
+                            <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-sm border border-slate-200 space-y-6">
+                                <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                                    {editingProduct ? 'Update Collection Item' : 'New Collection Item'}
+                                </h2>
                                 <form onSubmit={handleSaveProduct} className="space-y-4">
+                                    {/* Name */}
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Product Name</label>
-                                        <input placeholder="Ex: Vintage Silk Saree" value={name} onChange={e => setName(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900" required />
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Product Name</label>
+                                        <input placeholder="Ex: Regal Bridal Lehenga" value={name} onChange={e => setName(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required />
                                     </div>
+                                    
+                                    {/* Category */}
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Category</label>
-                                        <select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900 appearance-none">
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Category</label>
+                                        <select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm appearance-none">
                                             {categories.map(cat => (
                                                 <option key={cat.id} value={cat.name}>{cat.name}</option>
                                             ))}
                                         </select>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Day 1 Price</label>
-                                            <input type="number" placeholder="Rs" value={price1} onChange={e => setPrice1(Number(e.target.value))} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900" required />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Subsequent Price</label>
-                                            <input type="number" placeholder="Rs" value={priceSub} onChange={e => setPriceSub(Number(e.target.value))} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900" required />
+                                    {/* Type Toggle: Rent vs Buy */}
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1 block mb-1">Transaction Mode</label>
+                                        <div className="flex p-1 bg-slate-100 rounded-lg border border-slate-200">
+                                            <button
+                                                type="button"
+                                                onClick={() => setProductType('rent')}
+                                                className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${productType === 'rent' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                                            >
+                                                To Rent
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setProductType('buy')}
+                                                className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${productType === 'buy' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                                            >
+                                                To Buy
+                                            </button>
                                         </div>
                                     </div>
+
+                                    {/* Pricing Fields depending on type */}
+                                    {productType === 'buy' ? (
+                                        <div className="grid grid-cols-2 gap-4 animate-in fade-in duration-150">
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Retail Price ($)</label>
+                                                <input type="number" step="0.01" placeholder="Original" value={priceBuy} onChange={e => setPriceBuy(Number(e.target.value))} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Sale Price ($)</label>
+                                                <input type="number" step="0.01" placeholder="Discounted" value={priceBuySale} onChange={e => setPriceBuySale(Number(e.target.value))} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4 animate-in fade-in duration-150">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Base 3-Day Rent ($)</label>
+                                                    <input type="number" step="0.01" placeholder="Original" value={priceRent3Day} onChange={e => setPriceRent3Day(Number(e.target.value))} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Sale 3-Day Rent ($)</label>
+                                                    <input type="number" step="0.01" placeholder="Discounted" value={priceRent3DaySale} onChange={e => setPriceRent3DaySale(Number(e.target.value))} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Add-on Price Per Extra Day ($)</label>
+                                                <input type="number" step="0.01" placeholder="Rate per additional day" value={priceRentSubsequent} onChange={e => setPriceRentSubsequent(Number(e.target.value))} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Manual Availability Toggle */}
+                                    <div className="flex items-center space-x-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                        <input 
+                                            type="checkbox" 
+                                            id="is-available"
+                                            checked={isAvailable}
+                                            onChange={e => setIsAvailable(e.target.checked)}
+                                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 rounded"
+                                        />
+                                        <label htmlFor="is-available" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                            Available for Renting / Purchase
+                                        </label>
+                                    </div>
+
+                                    {/* Image Management */}
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Garment Photos {editingProduct && `(Existing: ${editingProduct.images.length})`}</label>
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Garment Photos</label>
                                         <div className="flex flex-wrap gap-2 mb-2">
                                             {editingProduct?.images.map(img => (
-                                                <div key={img.id} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-200">
+                                                <div key={img.id} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-slate-200">
                                                     <img src={img.url} className="w-full h-full object-cover" />
                                                     <button 
                                                         type="button"
                                                         onClick={async () => {
                                                             if (confirm("Delete this photo?")) {
-                                                                await fetch(`/api/catalog/products/${editingProduct.id}/images/${img.id}`, { method: 'DELETE' });
+                                                                const token = localStorage.getItem('token');
+                                                                await fetch(`/api/catalog/products/${editingProduct.id}/images/${img.id}`, { 
+                                                                    method: 'DELETE',
+                                                                    headers: { 'Authorization': `Bearer ${token}` }
+                                                                });
                                                                 fetchData();
-                                                                // Also update editingProduct state to reflect deletion
                                                                 setEditingProduct({...editingProduct, images: editingProduct.images.filter(i => i.id !== img.id)});
                                                             }
                                                         }}
@@ -348,8 +527,8 @@ export default function AdminDashboard() {
                                                 </div>
                                             ))}
                                             {selectedFiles.map((file, i) => (
-                                                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-indigo-200 bg-indigo-50 flex items-center justify-center">
-                                                    <span className="text-[10px] font-black text-indigo-400">New</span>
+                                                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden border border-indigo-200 bg-indigo-50 flex items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-indigo-400">New</span>
                                                     <button 
                                                         type="button"
                                                         onClick={() => setSelectedFiles(selectedFiles.filter((_, idx) => idx !== i))}
@@ -373,31 +552,36 @@ export default function AdminDashboard() {
                                                 className="hidden" 
                                                 id="file-upload" 
                                             />
-                                            <label htmlFor="file-upload" className="flex items-center justify-center w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:bg-slate-100 transition-colors">
-                                                <span className="text-sm font-black text-slate-500 uppercase tracking-widest">{uploading ? 'Processing...' : 'Choose Photos'}</span>
+                                            <label htmlFor="file-upload" className="flex items-center justify-center w-full p-3 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                                                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">{uploading ? 'Processing...' : 'Upload Photos'}</span>
                                             </label>
                                         </div>
                                     </div>
+
+                                    {/* Color & Size */}
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Color</label>
-                                            <input placeholder="Ruby Red" value={color} onChange={e => setColor(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900" />
+                                            <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Color</label>
+                                            <input placeholder="Ex: Emerald" value={color} onChange={e => setColor(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Size</label>
-                                            <input placeholder="Medium / Regular" value={size} onChange={e => setSize(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900" />
+                                            <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Size</label>
+                                            <input placeholder="Ex: XL" value={size} onChange={e => setSize(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" />
                                         </div>
                                     </div>
+
+                                    {/* Description */}
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Description</label>
-                                        <textarea placeholder="..." value={description} onChange={e => setDescription(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900 min-h-[120px]" />
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Description</label>
+                                        <textarea placeholder="Garment details..." value={description} onChange={e => setDescription(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm min-h-[100px]" />
                                     </div>
-                                    <div className="flex space-x-3 pt-4">
-                                        <button type="submit" className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">
+
+                                    <div className="flex space-x-2 pt-4">
+                                        <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 hover:shadow-lg transition-all active:scale-95 text-sm">
                                             {editingProduct ? 'Commit Changes' : 'Publish Item'}
                                         </button>
                                         {editingProduct && (
-                                            <button type="button" onClick={resetProductForm} className="px-6 bg-slate-50 text-slate-500 rounded-2xl font-bold hover:bg-slate-100 transition-colors">Discard</button>
+                                            <button type="button" onClick={resetProductForm} className="px-5 bg-slate-50 border border-slate-200 text-slate-500 rounded-xl font-bold hover:bg-slate-100 text-sm transition-colors">Discard</button>
                                         )}
                                     </div>
                                 </form>
@@ -406,29 +590,44 @@ export default function AdminDashboard() {
 
                         {/* List */}
                         <div className="lg:col-span-7">
-                            <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-200">
-                                <div className="flex items-center justify-between mb-8">
-                                    <h2 className="text-2xl font-black text-slate-900 tracking-tight">Live Inventory</h2>
+                            <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-sm border border-slate-200">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h2 className="text-xl font-black text-slate-800 tracking-tight">Active Inventory</h2>
                                     <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-black">{products.length} Items</span>
                                 </div>
-                                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 no-scrollbar">
+                                <div className="space-y-3 max-h-[800px] overflow-y-auto pr-2 no-scrollbar">
                                     {products.map(p => (
-                                        <div key={p.id} className="p-5 bg-slate-50 rounded-2xl flex items-center justify-between group hover:bg-white hover:shadow-lg hover:shadow-slate-100 transition-all duration-300 border border-transparent hover:border-slate-100">
-                                            <div className="flex items-center space-x-4">
-                                                <div className="w-14 h-14 bg-white rounded-xl overflow-hidden border border-slate-100 flex-shrink-0">
+                                        <div key={p.id} className="p-4 bg-slate-50 rounded-xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all duration-300 border border-slate-100">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-12 h-12 bg-white rounded-lg overflow-hidden border border-slate-200 flex-shrink-0">
                                                     <img src={p.images?.[0]?.url || "https://dummyimage.com/200x200/fff/ccc&text=P"} className="w-full h-full object-cover" />
                                                 </div>
                                                 <div>
-                                                    <p className="font-black text-slate-900 leading-tight">{p.name}</p>
-                                                    <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-1">{p.category} • Rs. {p.price_1_day}</p>
+                                                    <p className="font-bold text-slate-800 text-sm leading-none">{p.name}</p>
+                                                    <div className="flex items-center space-x-2 mt-1.5">
+                                                        <span className={`text-[8px] uppercase tracking-wider font-black px-1.5 py-0.5 rounded ${
+                                                            p.type === 'rent' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
+                                                        }`}>
+                                                            {p.type}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-bold">
+                                                            {p.type === 'rent' 
+                                                                ? `$${p.price_rent_3day} / 3d`
+                                                                : `$${p.price_buy}`
+                                                            }
+                                                        </span>
+                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                            {p.available ? 'available' : 'rented/offline'}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="flex space-x-2">
-                                                <button onClick={() => startEditing(p)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all">
-                                                    <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                            <div className="flex space-x-1.5">
+                                                <button onClick={() => startEditing(p)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all">
+                                                    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                                 </button>
-                                                <button onClick={() => handleDeleteProduct(p.id)} className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all">
-                                                    <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>
+                                                <button onClick={() => handleDeleteProduct(p.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all">
+                                                    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>
                                                 </button>
                                             </div>
                                         </div>
@@ -440,31 +639,31 @@ export default function AdminDashboard() {
                 )}
 
                 {activeTab === 'users' && (
-                    <div className="bg-white rounded-[32px] shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50 border-b border-slate-100">
                                     <tr>
-                                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">User Profile</th>
-                                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Email Address</th>
-                                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
+                                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">User Profile</th>
+                                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Email Address</th>
+                                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Role</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
                                     {users.map(u => (
                                         <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="px-8 py-5">
+                                            <td className="px-6 py-4">
                                                 <div className="flex items-center space-x-3">
-                                                    <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xs uppercase tracking-tighter">
+                                                    <div className="w-8 h-8 rounded-full bg-indigo-55 bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xs uppercase">
                                                         {u.full_name?.charAt(0) || 'U'}
                                                     </div>
-                                                    <span className="font-black text-slate-900 tracking-tight">{u.full_name || 'Anonymous User'}</span>
+                                                    <span className="font-bold text-slate-800 text-sm">{u.full_name || 'Anonymous User'}</span>
                                                 </div>
                                             </td>
-                                            <td className="px-8 py-5 text-sm font-bold text-slate-500">{u.email}</td>
-                                            <td className="px-8 py-5">
-                                                <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${u.is_admin ? 'bg-indigo-100 text-indigo-700' : 'bg-green-100 text-green-700'}`}>
-                                                    {u.is_admin ? 'Admin' : 'Regular'}
+                                            <td className="px-6 py-4 text-xs font-bold text-slate-500">{u.email}</td>
+                                            <td className="px-6 py-4 text-xs">
+                                                <span className={`inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${u.is_admin ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {u.is_admin ? 'Admin' : 'Customer'}
                                                 </span>
                                             </td>
                                         </tr>
@@ -476,78 +675,83 @@ export default function AdminDashboard() {
                 )}
 
                 {activeTab === 'reviews' && (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                         {reviews.length > 0 ? reviews.map(r => (
-                            <div key={r.id} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-slate-100 transition-all duration-500">
-                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                                    <div className="flex-1 space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center space-x-2">
-                                                <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black">USER {r.user_id}</span>
-                                                <span className="text-slate-300">→</span>
-                                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-widest">PRODUCT {r.product_id}</span>
-                                            </div>
-                                            <div className="flex items-center space-x-1 bg-yellow-50 px-3 py-1.5 rounded-full border border-yellow-100">
-                                                <span className="text-yellow-600 font-black text-sm">{r.rating}</span>
-                                                <span className="text-yellow-400 text-sm">★</span>
-                                            </div>
+                            <div key={r.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                                <div className="flex justify-between items-start">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center space-x-2">
+                                            <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black">USER {r.user_id}</span>
+                                            <span className="text-slate-300 text-xs">→</span>
+                                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] font-black">PRODUCT {r.product_id}</span>
                                         </div>
-                                        <p className="text-slate-700 font-bold italic text-lg leading-relaxed">"{r.comment}"</p>
-                                        {(r.original_comment !== r.comment || r.original_rating !== r.rating) && (
-                                            <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 space-y-1">
-                                                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-2">Editor Notes</p>
-                                                {r.original_comment !== r.comment && (
-                                                    <p className="text-xs text-indigo-600 font-bold italic leading-none">Original: "{r.original_comment}"</p>
-                                                )}
-                                                {r.original_rating !== r.rating && (
-                                                    <p className="text-xs text-indigo-600 font-bold italic leading-none">Original Rating: {r.original_rating}★</p>
-                                                )}
-                                            </div>
+                                        <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">
+                                            {format(new Date(r.created_at), 'MMMM d, yyyy • p')}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center space-x-1 bg-yellow-50 px-2.5 py-1 rounded-full border border-yellow-100">
+                                        <span className="text-yellow-600 font-black text-xs">{r.rating}</span>
+                                        <span className="text-yellow-400 text-xs">★</span>
+                                    </div>
+                                </div>
+                                
+                                <p className="text-slate-700 font-medium italic text-sm">"{r.comment}"</p>
+                                
+                                {(r.original_comment !== r.comment || r.original_rating !== r.rating) && (
+                                    <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/50 space-y-1 text-xs">
+                                        <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest mb-1">Moderator Log</p>
+                                        {r.original_comment !== r.comment && (
+                                            <p className="text-indigo-600 italic">Original Comment: "{r.original_comment}"</p>
                                         )}
-                                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">{format(new Date(r.created_at), 'MMMM d, yyyy • p')}</p>
+                                        {r.original_rating !== r.rating && (
+                                            <p className="text-indigo-600 italic">Original Rating: {r.original_rating}★</p>
+                                        )}
                                     </div>
-                                    <div className="flex md:flex-col gap-2 w-full md:w-auto">
-                                        <button onClick={() => handleUpdateReview(r)} className="flex-1 px-6 py-3 bg-slate-50 text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-colors">Adjust</button>
-                                        <button onClick={() => handleRevertReview(r.id)} className="flex-1 px-6 py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">Revert</button>
-                                        <button onClick={() => handleDeleteReview(r.id)} className="flex-1 px-6 py-3 bg-red-50 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all">Discard</button>
-                                    </div>
+                                )}
+
+                                <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                                    <button onClick={() => handleUpdateReview(r)} className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-xs font-bold transition-colors">Edit</button>
+                                    <button onClick={() => handleRevertReview(r.id)} className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-all">Revert</button>
+                                    <button onClick={() => handleDeleteReview(r.id)} className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold transition-all">Delete</button>
                                 </div>
                             </div>
                         )) : (
-                            <div className="text-center py-32 bg-white rounded-[32px] border-2 border-dashed border-slate-100">
-                                <p className="text-slate-400 font-black uppercase tracking-[0.3em] text-xs">Awaiting client feedback</p>
+                            <div className="text-center py-20 bg-white rounded-3xl border border-slate-200">
+                                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Awaiting customer reviews...</p>
                             </div>
                         )}
                     </div>
                 )}
 
                 {activeTab === 'blocks' && (
-                    <div className="max-w-3xl mx-auto">
-                        <div className="bg-white p-8 md:p-12 rounded-[40px] shadow-2xl shadow-indigo-100 border border-slate-100">
-                            <div className="text-center mb-10">
-                                <h2 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">Operational Override</h2>
-                                <p className="text-slate-500 font-bold text-sm tracking-tight leading-none">Lock inventory dates for maintenance or offline bookings.</p>
+                    <div className="max-w-xl mx-auto">
+                        <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm space-y-6">
+                            <div className="text-center">
+                                <h2 className="text-xl font-black text-slate-800 tracking-tight">Rental Calendar Override</h2>
+                                <p className="text-slate-400 text-xs mt-1">Manually block date ranges on the rental availability calendar.</p>
                             </div>
-                            <form onSubmit={handleBlockDates} className="space-y-8">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Target Product</label>
-                                    <select value={blockProductId} onChange={e => setBlockProductId(e.target.value)} className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] focus:ring-4 focus:ring-indigo-50 outline-none font-bold text-slate-900 appearance-none text-lg" required>
-                                        <option value="">Locate entry...</option>
-                                        {products.map(p => <option key={p.id} value={p.id}>{p.name} (SKU-{p.id})</option>)}
+                            <form onSubmit={handleBlockDates} className="space-y-4">
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Target Product</label>
+                                    <select value={blockProductId} onChange={e => setBlockProductId(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required>
+                                        <option value="">Locate item...</option>
+                                        {products.filter(p => p.type === 'rent').map(p => (
+                                            <option key={p.id} value={p.id}>{p.name} (SKU-{p.id})</option>
+                                        ))}
                                     </select>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Blackout Start</label>
-                                        <input type="date" value={blockStart} onChange={e => setBlockStart(e.target.value)} className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] focus:ring-4 focus:ring-indigo-50 outline-none font-black text-indigo-600" required />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Start Date</label>
+                                        <input type="date" value={blockStart} onChange={e => setBlockStart(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required />
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Blackout End</label>
-                                        <input type="date" value={blockEnd} onChange={e => setBlockEnd(e.target.value)} className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] focus:ring-4 focus:ring-indigo-50 outline-none font-black text-indigo-600" required />
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">End Date</label>
+                                        <input type="date" value={blockEnd} onChange={e => setBlockEnd(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" required />
                                     </div>
                                 </div>
-                                <button type="submit" className="w-full bg-red-600 text-white py-5 rounded-[24px] font-black text-xl shadow-xl shadow-red-100 hover:bg-red-700 hover:-translate-y-1 transition-all active:scale-95 duration-300">
-                                    Enforce Blackout
+                                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition-all active:scale-98">
+                                    Enforce Blackout Block
                                 </button>
                             </form>
                         </div>
@@ -555,35 +759,80 @@ export default function AdminDashboard() {
                 )}
 
                 {activeTab === 'categories' && (
-                    <div className="max-w-2xl mx-auto">
-                        <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-200 mb-8">
-                            <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight">Add New Category</h2>
-                            <form onSubmit={handleAddCategory} className="flex space-x-3">
+                    <div className="max-w-xl mx-auto space-y-6">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                            <h2 className="text-lg font-black text-slate-800 tracking-tight">Create New Category</h2>
+                            <form onSubmit={handleAddCategory} className="flex space-x-2">
                                 <input 
-                                    placeholder="Ex: Summer Collection" 
+                                    placeholder="Ex: Traditional Wear" 
                                     value={newCategoryName} 
                                     onChange={e => setNewCategoryName(e.target.value)} 
-                                    className="flex-1 p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-900" 
+                                    className="flex-1 p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" 
                                     required 
                                 />
-                                <button type="submit" className="px-8 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all">
-                                    Add
+                                <button type="submit" className="px-6 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors text-sm">
+                                    Create
                                 </button>
                             </form>
                         </div>
 
-                        <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-200">
-                            <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight">Active Categories</h2>
-                            <div className="space-y-3">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                            <h2 className="text-lg font-black text-slate-800 tracking-tight">Product Categories</h2>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                                 {categories.map(cat => (
-                                    <div key={cat.id} className="p-4 bg-slate-50 rounded-2xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all border border-transparent hover:border-slate-100">
-                                        <span className="font-bold text-slate-900">{cat.name}</span>
-                                        <button onClick={() => handleDeleteCategory(cat.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">
-                                            <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>
+                                    <div key={cat.id} className="p-3.5 bg-slate-50 rounded-xl flex items-center justify-between hover:bg-slate-100/50 transition-colors border border-slate-100">
+                                        <span className="font-bold text-slate-800 text-sm">{cat.name}</span>
+                                        <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors">
+                                            <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>
                                         </button>
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'discounts' && (
+                    <div className="max-w-xl mx-auto animate-in fade-in duration-200">
+                        <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm space-y-6">
+                            <div className="text-center">
+                                <h2 className="text-xl font-black text-slate-800 tracking-tight">Global Store Discount Engine</h2>
+                                <p className="text-slate-400 text-xs mt-1">Set a catalog-wide percentage discount that overrides item-specific sale prices.</p>
+                            </div>
+                            <form onSubmit={handleSaveGlobalDiscount} className="space-y-6">
+                                <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between">
+                                    <div>
+                                        <label htmlFor="discount-active" className="text-xs font-bold text-slate-700 block cursor-pointer">
+                                            Enable Global Discount
+                                        </label>
+                                        <span className="text-[10px] text-slate-400 font-semibold">Toggles discount active status across the store</span>
+                                    </div>
+                                    <input 
+                                        type="checkbox" 
+                                        id="discount-active"
+                                        checked={globalDiscountActive}
+                                        onChange={e => setGlobalDiscountActive(e.target.checked)}
+                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 rounded"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Discount Rate (%)</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="number" 
+                                            min="0" max="100" step="0.5"
+                                            value={globalDiscountPercentage} 
+                                            onChange={e => setGlobalDiscountPercentage(Number(e.target.value))} 
+                                            className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-sm" 
+                                            required 
+                                        />
+                                        <span className="absolute right-4 top-3 text-slate-400 font-bold text-sm">%</span>
+                                    </div>
+                                </div>
+                                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition-all active:scale-98">
+                                    Apply Global Discount Settings
+                                </button>
+                            </form>
                         </div>
                     </div>
                 )}

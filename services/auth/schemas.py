@@ -2,7 +2,9 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 class UserBase(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    instagram_id: Optional[str] = None
     full_name: Optional[str] = None
 
 class UserCreate(UserBase):
@@ -13,6 +15,7 @@ class UserResponse(UserBase):
     is_active: bool
     is_admin: bool
     is_verified_email: bool
+    is_verified_phone: bool
     google_id: Optional[str] = None
 
     class Config:
@@ -21,11 +24,20 @@ class UserResponse(UserBase):
 class GoogleLogin(BaseModel):
     id_token: str
 
+class InstagramLogin(BaseModel):
+    instagram_id: str
+    full_name: Optional[str] = None
+
+class FacebookLogin(BaseModel):
+    access_token: str
+
 class VerificationSend(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
 
 class VerificationConfirm(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
     code: str
 
 class Token(BaseModel):
