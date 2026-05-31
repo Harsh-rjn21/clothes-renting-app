@@ -41,6 +41,7 @@ interface Review {
 }
 
 export default function ProductDetails() {
+    const adminPhoneNumber = process.env.NEXT_PUBLIC_ADMIN_PHONE || "916206430920";
     const { id } = useParams();
     const router = useRouter();
     const [product, setProduct] = useState<Product | null>(null);
@@ -191,7 +192,7 @@ export default function ProductDetails() {
         const start = format(range.from, 'PPP');
         const end = format(range.to, 'PPP');
         const message = `Hello! I'm interested in renting "${product.name}" from ${start} to ${end}. Estimate price: $${totalPrice.toFixed(2)}. Is it available?`;
-        window.open(`https://wa.me/916206430920?text=${encodeURIComponent(message)}`, '_blank');
+        window.open(`https://wa.me/${adminPhoneNumber}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
     const handleWhatsAppBuy = () => {
@@ -205,7 +206,7 @@ export default function ProductDetails() {
         }
         
         const message = `Hello! I'm interested in buying "${product.name}" for $${activePrice.toFixed(2)}. Is it available?`;
-        window.open(`https://wa.me/916206430920?text=${encodeURIComponent(message)}`, '_blank');
+        window.open(`https://wa.me/${adminPhoneNumber}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
     const handleReviewSubmit = async (e: React.FormEvent) => {

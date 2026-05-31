@@ -57,7 +57,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
         e.preventDefault();
         e.stopPropagation();
         
-        const adminPhoneNumber = "916206430920"; // Replace with your target admin number
+        const adminPhoneNumber = process.env.NEXT_PUBLIC_ADMIN_PHONE || "916206430920"; // Replace with your target admin number
         const itemType = product.type === 'rent' ? "Rent" : "Buy";
         const messageText = `Hi, I would like to enquire about ${product.name} (${itemType}) in the category ${product.category}.`;
         const waUrl = `https://wa.me/${adminPhoneNumber}?text=${encodeURIComponent(messageText)}`;

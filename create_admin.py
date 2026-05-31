@@ -1,4 +1,5 @@
 import psycopg2
+import os
 from passlib.context import CryptContext
 
 # Password hashing
@@ -7,7 +8,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def create_admin_user():
     try:
         # Connect to the database
-        conn = psycopg2.connect("postgresql://user:password@localhost:5432/clothes_renting")
+        db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/clothes_renting")
+        conn = psycopg2.connect(db_url)
         cur = conn.cursor()
         
         # Admin email

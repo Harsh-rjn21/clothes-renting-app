@@ -28,6 +28,7 @@ load_env()
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+ADMIN_PHONE = os.getenv("ADMIN_PHONE") or os.getenv("NEXT_PUBLIC_ADMIN_PHONE", "916206430920")
 
 # Initialize Razorpay Client
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
@@ -66,7 +67,7 @@ def create_booking(booking: schemas.BookingCreate, db: Session = Depends(databas
         print(f"\n[NOTIFICATION] Sending WhatsApp/Email to Customer (User ID: {new_booking.user_id}):")
         print(f"  Message: Hello! Your booking for Product ID {new_booking.product_id} has been confirmed from {new_booking.start_date} to {new_booking.end_date} ({duration} days).")
         # Admin notification
-        print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone 916206430920 and sender connect.local.1221@gmail.com")
+        print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone {ADMIN_PHONE} and sender connect.local.1221@gmail.com")
         print(f"  Message: Admin Alert: Customer ID {new_booking.user_id} has booked Product ID {new_booking.product_id} to rent from {new_booking.start_date} to {new_booking.end_date} for {duration} days.")
         print("="*60 + "\n")
     else:
@@ -74,7 +75,7 @@ def create_booking(booking: schemas.BookingCreate, db: Session = Depends(databas
         print(f"\n[NOTIFICATION] Sending WhatsApp/Email to Customer (User ID: {new_booking.user_id}):")
         print(f"  Message: Hello! Your order for Product ID {new_booking.product_id} has been confirmed. Thank you for your purchase!")
         # Admin notification
-        print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone 916206430920 and sender connect.local.1221@gmail.com")
+        print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone {ADMIN_PHONE} and sender connect.local.1221@gmail.com")
         print(f"  Message: Admin Alert: Customer ID {new_booking.user_id} has purchased Product ID {new_booking.product_id} to buy.")
         print("="*60 + "\n")
         
@@ -222,7 +223,7 @@ def verify_payment(data: schemas.RazorpayVerificationRequest, db: Session = Depe
                 print(f"\n[NOTIFICATION] Sending WhatsApp/Email to Customer (User ID: {new_booking.user_id}):")
                 print(f"  Message: Hello! Your booking for Product ID {new_booking.product_id} has been confirmed from {new_booking.start_date} to {new_booking.end_date} ({duration} days).")
                 # Admin notification
-                print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone 916206430920 and sender connect.local.1221@gmail.com")
+                print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone {ADMIN_PHONE} and sender connect.local.1221@gmail.com")
                 print(f"  Message: Admin Alert: Customer ID {new_booking.user_id} has booked Product ID {new_booking.product_id} to rent from {new_booking.start_date} to {new_booking.end_date} for {duration} days.")
                 print("="*60 + "\n")
             else:
@@ -230,7 +231,7 @@ def verify_payment(data: schemas.RazorpayVerificationRequest, db: Session = Depe
                 print(f"\n[NOTIFICATION] Sending WhatsApp/Email to Customer (User ID: {new_booking.user_id}):")
                 print(f"  Message: Hello! Your order for Product ID {new_booking.product_id} has been confirmed. Thank you for your purchase!")
                 # Admin notification
-                print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone 916206430920 and sender connect.local.1221@gmail.com")
+                print(f"\n[NOTIFICATION] Sending WhatsApp/Email targeting phone {ADMIN_PHONE} and sender connect.local.1221@gmail.com")
                 print(f"  Message: Admin Alert: Customer ID {new_booking.user_id} has purchased Product ID {new_booking.product_id} to buy.")
                 print("="*60 + "\n")
 
